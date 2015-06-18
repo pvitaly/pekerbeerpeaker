@@ -209,12 +209,12 @@ while True:
     elif event.type == KEYUP and event.key == K_0:
       fm2.clear()
 
+  currentTime = int(time.time() * FlowMeter.MS_IN_A_SECOND)
+
   if currentTime - lastTweet < 5000: # Pause for 5 seconds after tweeting to show the tweet
     view_mode = 'tweet'
   else:
     view_mode = 'normal'
-
-  currentTime = int(time.time() * FlowMeter.MS_IN_A_SECOND)
 
   printPour(fm, currentTime)
   printPour(fm2, currentTime)
