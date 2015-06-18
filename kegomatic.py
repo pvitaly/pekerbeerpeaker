@@ -179,10 +179,19 @@ def writeToCsv(flowmeter):
 	tapWriter.writerow([str(flowmeter.tap), str(flowmeter.dataPin), str(flowmeter.beverage), str(datetime.now()), str(flowmeter.thisPour), str(flowmeter.totalPour)])
 
 def writeTotalsToCsv(flowmeter):
+	newcsv = []
+    with open('total-taps.csv', 'rb') as csvfile:
+      tapsReader = csv.reader(csvfile, delimiter=',', quotechar='|')
+        for row in tapsReader:
+			if row[0] == str(flowmeter.tap):
+              row[4] = str(flowmeter.totalPour)
+
+			newcsv.append(row)
+
 	with open('total-taps.csv', 'wb') as csvfile:
 		tapWriter = csv.writer(csvfile, delimiter=',', quotechar = '|', quoting=csv.QUOTE_MINIMAL)
-		tapWriter.writerow([str(flowmeter.tap), str(flowmeter.dataPin), str(flowmeter.beverage), str(datetime.now()), str(flowmeter.totalPour)])
-
+        for line in newcsv:
+          tapWriter.writerow(line)
 def printPour(flowmeter, currentTime):
   if (flowmeter.thisPour > 0.0443603 and (currentTime - flowmeter.lastClick) > 5000): # after 5 seconds of inactivity write info to file
 	tweet = "You just poured " + fm.getFormattedThisPour() + " of " + fm.getBeverage() + " at Peker Brewing Co."
