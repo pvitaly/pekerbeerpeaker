@@ -1,4 +1,5 @@
 import time
+import csv
 
 class FlowMeter():
   PINTS_IN_A_LITER = 2.11338
@@ -16,8 +17,11 @@ class FlowMeter():
   flow = 0 # in Liters per second
   thisPour = 0.0 # in Liters
   totalPour = 0.0 # in Liters
+  voltageDelta = 3.4
+  tap = 0
+  dataPin = 0
 
-  def __init__(self, displayFormat, beverage):
+  def __init__(self, displayFormat, beverage, voltageDelta, tap, dataPin):
     self.displayFormat = displayFormat
     self.beverage = beverage
     self.clicks = 0
@@ -28,17 +32,21 @@ class FlowMeter():
     self.thisPour = 0.0
     self.totalPour = 0.0
     self.enabled = True
+    self.voltageDelta = voltageDelta
+    self.tap = tap
+    self.dataPin = dataPin
+    self.updateTotalsFromFile()
 
   def update(self, currentTime):
     self.clicks += 1
     # get the time delta
     self.clickDelta = max((currentTime - self.lastClick), 1)
     # calculate the instantaneous speed
-    if (self.enabled == True and self.clickDelta < 1000):
+    if (self.enabled == True and self.clickDelta > 0):
       self.hertz = FlowMeter.MS_IN_A_SECOND / self.clickDelta
       if (self.hertz > FlowMeter.MIN_HZ and self.hertz < FlowMeter.MAX_HZ): # Only update the flow is fast enough, to avoid electrical shenanigans by the flow meters.
-        self.flow = self.hertz / (FlowMeter.SECONDS_IN_A_MINUTE * 7.5)  # In Liters per second
-        instPour = self.flow * (self.clickDelta / FlowMeter.MS_IN_A_SECOND)  
+        self.flow = self.hertz / (FlowMeter.SECONDS_IN_A_MINUTE * self.voltageDelta)  # In Liters per second
+        instPour = self.flow * (self.clickDelta / FlowMeter.MS_IN_A_SECOND)
         self.thisPour += instPour
         self.totalPour += instPour
     # Update the last click
@@ -49,22 +57,22 @@ class FlowMeter():
 
   def getFormattedClickDelta(self):
      return str(self.clickDelta) + ' ms'
-  
+
   def getFormattedHertz(self):
      return str(round(self.hertz,3)) + ' Hz'
-  
+
   def getFormattedFlow(self):
     if(self.displayFormat == 'metric'):
       return str(round(self.flow,3)) + ' L/s'
     else:
       return str(round(self.flow * FlowMeter.PINTS_IN_A_LITER, 3)) + ' pints/s'
-  
+
   def getFormattedThisPour(self):
     if(self.displayFormat == 'metric'):
       return str(round(self.thisPour,3)) + ' L'
     else:
       return str(round(self.thisPour * FlowMeter.PINTS_IN_A_LITER, 3)) + ' pints'
-  
+
   def getFormattedTotalPour(self):
     if(self.displayFormat == 'metric'):
       return str(round(self.totalPour,3)) + ' L'
@@ -74,3 +82,14 @@ class FlowMeter():
   def clear(self):
     self.thisPour = 0;
     self.totalPour = 0;
+
+  def channelRead(self, channel):
+	currentTime = int(time.time() * FlowMeter.MS_IN_A_SECOND)
+	self.update(currentTime)
+
+  def updateTotalsFromFile(self):
+	  with open('total-taps.csv', 'rb') as csvfile:
+		  tapsReader = csv.reader(csvfile, delimiter=',', quotechar='|')
+		  for row in tapsReader:
+			  if row[0] == str(self.tap):
+				  self.totalPour = float(row[4])

@@ -6,17 +6,17 @@ import logging
 import pygame, sys
 from pygame.locals import *
 import RPi.GPIO as GPIO
-from twitter import *
 from flowmeter import *
 from adabot import *
-from seekrits import *
-
-t = Twitter( auth=OAuth(OAUTH_TOKEN, OAUTH_SECRET, CONSUMER_KEY, CONSUMER_SECRET) )
+import csv
+from datetime import datetime
 
 #boardRevision = GPIO.RPI_REVISION
 GPIO.setmode(GPIO.BCM) # use real GPIO numbering
+GPIO.setup(18,GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(23,GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(24,GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(12,GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(21,GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # set up pygame
 pygame.init()
@@ -32,8 +32,10 @@ view_mode = 'normal'
 pygame.mouse.set_visible(False)
 
 # set up the flow meters
-fm = FlowMeter('metric', 'beer')
-fm2 = FlowMeter('metric', 'root beer')
+fm = FlowMeter('metric', 'Not-So-Skinny Dip', 3.6, 1, 18)
+fm2 = FlowMeter('metric', 'Irish Hills Red', 4, 2, 23)
+fm3 = FlowMeter('metric', 'Water', 3.82, 3, 12)
+fm4 = FlowMeter('metric', 'One & Only Hearted', 3.6, 4, 21)
 tweet = ''
 
 # set up the colors
@@ -41,7 +43,7 @@ BLACK = (0,0,0)
 WHITE = (255,255,255)
 
 # set up the window surface
-windowSurface = pygame.display.set_mode((VIEW_WIDTH,VIEW_HEIGHT), FULLSCREEN, 32) 
+windowSurface = pygame.display.set_mode((VIEW_WIDTH,VIEW_HEIGHT), FULLSCREEN, 32)
 windowInfo = pygame.display.Info()
 FONTSIZE = 48
 LINEHEIGHT = 28
@@ -63,44 +65,44 @@ def drawText(surface, text, color, rect, font, aa=False, bkg=None):
     rect = Rect(rect)
     y = rect.top
     lineSpacing = -2
- 
+
     # get the height of the font
     fontHeight = font.size("Tg")[1]
- 
+
     while text:
         i = 1
- 
+
         # determine if the row of text will be outside our area
         if y + fontHeight > rect.bottom:
             break
- 
+
         # determine maximum width of line
         while font.size(text[:i])[0] < rect.width and i < len(text):
             i += 1
- 
-        # if we've wrapped the text, then adjust the wrap to the last word      
-        if i < len(text): 
+
+        # if we've wrapped the text, then adjust the wrap to the last word
+        if i < len(text):
             i = text.rfind(" ", 0, i) + 1
- 
+
         # render the line and blit it to the surface
         if bkg:
             image = font.render(text[:i], 1, color, bkg)
             image.set_colorkey(bkg)
         else:
             image = font.render(text[:i], aa, color)
- 
+
         surface.blit(image, (rect.left, y))
         y += fontHeight + lineSpacing
- 
+
         # remove the text we just blitted
         text = text[i:]
- 
+
     return text
 
-def renderThings(flowMeter, flowMeter2, tweet, windowSurface, basicFont):
+def renderThings(tweet, windowSurface, basicFont):
   # Clear the screen
   windowSurface.blit(bg,(0,0))
-  
+
   # draw the adabots
   back_bot.update()
   windowSurface.blit(back_bot.image,(back_bot.x, back_bot.y))
@@ -121,6 +123,14 @@ def renderThings(flowMeter, flowMeter2, tweet, windowSurface, basicFont):
     text = basicFont.render(fm2.getFormattedThisPour(), True, WHITE, BLACK)
     textRect = text.get_rect()
     windowSurface.blit(text, (40, 30+(2*(LINEHEIGHT+5))))
+  if fm3.enabled:
+	text = basicFont.render(fm3.getFormattedThisPour(), True, WHITE, BLACK)
+	textRect = text.get_rect()
+	windowSurface.blit(text, (40, 30+(3*(LINEHEIGHT+7))))
+  if fm4.enabled:
+	text = basicFont.render(fm4.getFormattedThisPour(), True, WHITE, BLACK)
+	textRect = text.get_rect()
+	windowSurface.blit(text, (40, 30+(4*(LINEHEIGHT+9))))
 
   # Draw Ammt Poured Total
   text = basicFont.render("TOTAL", True, WHITE, BLACK)
@@ -134,26 +144,22 @@ def renderThings(flowMeter, flowMeter2, tweet, windowSurface, basicFont):
     text = basicFont.render(fm2.getFormattedTotalPour(), True, WHITE, BLACK)
     textRect = text.get_rect()
     windowSurface.blit(text, (windowInfo.current_w - textRect.width - 40, 30 + (2 * (LINEHEIGHT+5))))
-  
+  if fm3.enabled:
+	text = basicFont.render(fm3.getFormattedTotalPour(), True, WHITE, BLACK)
+	textRect = text.get_rect()
+	windowSurface.blit(text, (windowInfo.current_w - textRect.width - 40, 30 + (3 * (LINEHEIGHT+7))))
+  if fm4.enabled:
+	text = basicFont.render(fm4.getFormattedTotalPour(), True, WHITE, BLACK)
+  	textRect = text.get_rect()
+	windowSurface.blit(text, (windowInfo.current_w - textRect.width - 40, 30 + (4 * (LINEHEIGHT+9))))
+
   if view_mode == 'tweet':
-    windowSurface.blit(tweet_bg,(0,0))
-    textRect = Rect(545,265,500,225)
-    drawText(windowSurface, tweet, BLACK, textRect, basicFont, True, None)
+	windowSurface.blit(tweet_bg,(0,0))
+	textRect = Rect(545,265,500,225)
+	drawText(windowSurface, tweet, BLACK, textRect, basicFont, True, None)
 
   # Display everything
   pygame.display.flip()
-
-# Beer, on Pin 23.
-def doAClick(channel):
-  currentTime = int(time.time() * FlowMeter.MS_IN_A_SECOND)
-  if fm.enabled == True:
-    fm.update(currentTime)
-
-# Root Beer, on Pin 24.
-def doAClick2(channel):
-  currentTime = int(time.time() * FlowMeter.MS_IN_A_SECOND)
-  if fm2.enabled == True:
-    fm2.update(currentTime)
 
 def tweetPour(theTweet):
   try:
@@ -161,8 +167,30 @@ def tweetPour(theTweet):
   except:
     logging.warning('Error tweeting: ' + theTweet + "\n")
 
-GPIO.add_event_detect(23, GPIO.RISING, callback=doAClick, bouncetime=20) # Beer, on Pin 23
-GPIO.add_event_detect(24, GPIO.RISING, callback=doAClick2, bouncetime=20) # Root Beer, on Pin 24
+GPIO.add_event_detect(18, GPIO.RISING, callback=fm.channelRead, bouncetime=20) # Not So Skinny Dip
+GPIO.add_event_detect(23, GPIO.RISING, callback=fm2.channelRead, bouncetime=20) # Irish Hills Red
+GPIO.add_event_detect(12, GPIO.RISING, callback=fm3.channelRead, bouncetime=20) # Water
+GPIO.add_event_detect(21, GPIO.RISING, callback=fm4.channelRead, bouncetime=20) # One and Only Hearted
+
+
+def writeToCsv(flowmeter):
+  with open('taps.csv', 'ab') as csvfile:
+	tapWriter = csv.writer(csvfile, delimiter=',', quotechar= '|', quoting=csv.QUOTE_MINIMAL)
+	tapWriter.writerow([str(flowmeter.tap), str(flowmeter.dataPin), str(flowmeter.beverage), str(datetime.now()), str(flowmeter.thisPour), str(flowmeter.totalPour)])
+
+def writeTotalsToCsv(flowmeter):
+	with open('total-taps.csv', 'wb') as csvfile:
+		tapWriter = csv.writer(csvfile, delimiter=',', quotechar = '|', quoting=csv.QUOTE_MINIMAL)
+		tapWriter.writerow([str(flowmeter.tap), str(flowmeter.dataPin), str(flowmeter.beverage), str(datetime.now()), str(flowmeter.totalPour)])
+
+def printPour(flowmeter, currentTime):
+  if (flowmeter.thisPour > 0.0443603 and (currentTime - flowmeter.lastClick) > 5000): # after 5 seconds of inactivity write info to file
+	tweet = "You just poured " + fm.getFormattedThisPour() + " of " + fm.getBeverage() + " at Peker Brewing Co."
+	lastTweet = int(time.time() * FlowMeter.MS_IN_A_SECOND)
+	writeToCsv(flowmeter)
+	writeTotalsToCsv(flowmeter)
+	flowmeter.thisPour = 0.0
+	return tweet
 
 # main loop
 while True:
@@ -180,25 +208,17 @@ while True:
       fm.clear()
     elif event.type == KEYUP and event.key == K_0:
       fm2.clear()
-  
-  currentTime = int(time.time() * FlowMeter.MS_IN_A_SECOND)
- 
+
   if currentTime - lastTweet < 5000: # Pause for 5 seconds after tweeting to show the tweet
     view_mode = 'tweet'
   else:
     view_mode = 'normal'
 
-  if (fm.thisPour > 0.23 and currentTime - fm.lastClick > 10000): # 10 seconds of inactivity causes a tweet
-    tweet = "Someone just poured " + fm.getFormattedThisPour() + " of " + fm.getBeverage() + " from the Adafruit kegomatic!" 
-    lastTweet = int(time.time() * FlowMeter.MS_IN_A_SECOND)
-    fm.thisPour = 0.0
-    tweetPour(tweet)
- 
-  if (fm2.thisPour > 0.23 and currentTime - fm2.lastClick > 10000): # 10 seconds of inactivity causes a tweet
-    tweet = "Someone just poured " + fm2.getFormattedThisPour() + " of " + fm2.getBeverage() + " from the Adafruit kegomatic!"
-    lastTweet = int(time.time() * FlowMeter.MS_IN_A_SECOND)
-    fm2.thisPour = 0.0
-    tweetPour(tweet)
+  currentTime = int(time.time() * FlowMeter.MS_IN_A_SECOND)
 
-  # Update the screen
-  renderThings(fm, fm2, tweet, windowSurface, basicFont)
+  printPour(fm, currentTime)
+  printPour(fm2, currentTime)
+  printPour(fm3, currentTime)
+  printPour(fm4, currentTime)
+
+  renderThings(tweet, windowSurface, basicFont)
