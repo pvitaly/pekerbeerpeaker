@@ -6,6 +6,7 @@ import logging
 import pygame, sys
 from pygame.locals import *
 import RPi.GPIO as GPIO
+import Adafruit_DHT as DHT
 from flowmeter import *
 from adabot import *
 import csv
@@ -37,6 +38,9 @@ fm2 = FlowMeter('metric', 'Irish Hills Red', 4, 2, 23)
 fm3 = FlowMeter('metric', 'Water', 3.82, 3, 12)
 fm4 = FlowMeter('metric', 'One & Only Hearted', 3.6, 4, 21)
 tweet = ''
+
+humidity, temperature = DHT.read_retry(DHT.DHT22, 4)
+lastTempReading = 0
 
 # set up the colors
 BLACK = (0,0,0)
@@ -111,6 +115,11 @@ def renderThings(tweet, windowSurface, basicFont):
   front_bot.update()
   windowSurface.blit(front_bot.image,(front_bot.x, front_bot.y))
 
+  text = basicFont.render(getFormattedTemp(temperature), True, WHITE, BLACK)
+  windowSurface.blit(text, (40, 30+(5*(LINEHEIGHT+11))))
+  text = basicFont.render(getFormattedHumidity(humidity), True, WHITE, BLACK)
+  windowSurface.blit(text, (40, 30+(6*(LINEHEIGHT+13))))
+
   # Draw Ammt Poured
   text = basicFont.render("CURRENT", True, WHITE, BLACK)
   textRect = text.get_rect()
@@ -172,6 +181,12 @@ GPIO.add_event_detect(23, GPIO.RISING, callback=fm2.channelRead, bouncetime=20) 
 GPIO.add_event_detect(12, GPIO.RISING, callback=fm3.channelRead, bouncetime=20) # Water
 GPIO.add_event_detect(21, GPIO.RISING, callback=fm4.channelRead, bouncetime=20) # One and Only Hearted
 
+def getFormattedTemp(temp):
+	temp = (temp * 1.8) + 32
+	return '{0:.2f}*F'.format(temp)
+
+def getFormattedHumidity(humid):
+	return '{0:.2f}%'.format(humid)
 
 def writeToCsv(flowmeter):
   with open('taps.csv', 'ab') as csvfile:
@@ -192,14 +207,21 @@ def writeTotalsToCsv(flowmeter):
       for line in newcsv:
         tapWriter.writerow(line)
 
-def printPour(flowmeter, currentTime):
+def printPour(flowmeter, currentTime, view_mode, windowSurface, basicFont):
+  global lastTweet
+  global tweet
+
   if (flowmeter.thisPour > 0.0443603 and (currentTime - flowmeter.lastClick) > 5000): # after 5 seconds of inactivity write info to file
-	tweet = "You just poured " + fm.getFormattedThisPour() + " of " + fm.getBeverage() + " at Peker Brewing Co."
+	tweet = "You just poured " + flowmeter.getFormattedThisPour() + " of " + flowmeter.getBeverage() + " at Peker Brewing Co."
+	logging.warning(flowmeter.beverage)
 	lastTweet = int(time.time() * FlowMeter.MS_IN_A_SECOND)
 	writeToCsv(flowmeter)
 	writeTotalsToCsv(flowmeter)
 	flowmeter.thisPour = 0.0
-	return tweet
+
+	if view_mode == 'tweet':
+		renderThings(tweet, windowSurface, basicFont)
+
 
 # main loop
 while True:
@@ -225,11 +247,13 @@ while True:
   else:
     view_mode = 'normal'
 
-  tweet = printPour(fm, currentTime)
-  tweet = printPour(fm2, currentTime)
-  tweet = printPour(fm3, currentTime)
-  tweet = printPour(fm4, currentTime)
+  if currentTime - lastTempReading > 30000: # Take a temp and humidity reading every 30 seconds
+	humidity, temperature = DHT.read_retry(DHT.DHT22, 4)
+	lastTempReading = int(time.time() * FlowMeter.MS_IN_A_SECOND)
 
-  logging.warning(tweet)
+  printPour(fm, currentTime, view_mode, windowSurface, basicFont)
+  printPour(fm2, currentTime, view_mode, windowSurface, basicFont)
+  printPour(fm3, currentTime, view_mode, windowSurface, basicFont)
+  printPour(fm4, currentTime, view_mode, windowSurface, basicFont)
 
   renderThings(tweet, windowSurface, basicFont)
